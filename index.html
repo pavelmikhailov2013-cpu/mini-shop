@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Магазин</title>
+  <title>Мини-магазин</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root { --pad: 16px }
@@ -35,7 +35,6 @@
   </div>
 
   <div id="catalog" class="grid"></div>
-
   <div id="cart" class="cart" style="display:none"></div>
 
   <div id="fallback" class="notice" style="display:none">
@@ -43,15 +42,13 @@
     Бот: <b>@magazin_b2b_bot</b>
   </div>
 
-  <div class="footer">
-    <div id="summary" class="total"></div>
-  </div>
+  <div class="footer"><div id="summary" class="total"></div></div>
 
   <script>
     const WebApp = window.Telegram?.WebApp;
     const inTG = !!WebApp; if (inTG) { WebApp.expand(); WebApp.ready(); }
 
-    // ---- Каталог: 5 товаров 100–500 ₽
+    // --- Каталог: 5 товаров 100–500 ₽
     const catalog = [
       { id: 1, title: "Товар A", price: 100 },
       { id: 2, title: "Товар B", price: 200 },
@@ -61,7 +58,7 @@
     ];
 
     const cart = new Map();
-    let view = 'catalog'; // 'catalog' | 'cart'
+    let view = 'catalog';
     const fmt = n => new Intl.NumberFormat('ru-RU').format(n) + " ₽";
 
     const el = {
@@ -112,10 +109,8 @@
           </div>`;
         el.cart.appendChild(e);
       });
-
       const btn = document.createElement('button');
-      btn.className = 'ghost';
-      btn.style.marginTop = '8px';
+      btn.className = 'ghost'; btn.style.marginTop = '8px';
       btn.textContent = 'Оформить заказ';
       btn.onclick = checkout;
       el.cart.appendChild(btn);
@@ -174,24 +169,13 @@
       return { order_id: String(Date.now()), items, total, currency: "RUB" };
     }
 
-  <script>
-    function buildPayload() {
-      const items = [...cart.values()].map(({item, qty}) => ({
-        id: item.id, title: item.title, qty, price: item.price, sum: item.price * qty
-      }));
-      const total = items.reduce((s, x) => s + x.sum, 0);
-      return { order_id: String(Date.now()), items, total, currency: "RUB" };
-    }
-
     async function checkout() {
-      const WebApp = window.Telegram?.WebApp;
-      if (!WebApp) { alert("Откройте магазин в Telegram у бота."); return; }
-
       const payload = buildPayload();
-      const qid = WebApp?.initDataUnsafe?.query_id; // есть только при запуске из Menu Button/inline
+      if (!inTG) { alert("Откройте магазин в Telegram у бота."); return; }
 
+      const qid = WebApp?.initDataUnsafe?.query_id; // есть при запуске из Menu Button
       if (qid) {
-        // ======== ПУТЬ ДЛЯ MENU BUTTON: answerWebAppQuery ========
+        // ===== путь для Menu Button: answerWebAppQuery через ваш HTTP-эндпоинт =====
         try {
           const res = await fetch("https://mini-shop-pavel.loca.lt/webapp/checkout", {
             method: "POST",
@@ -208,7 +192,7 @@
         return;
       }
 
-      // ======== ПУТЬ ДЛЯ СЕРОЙ/INLINE-КНОПКИ: sendData ========
+      // ===== путь для серой/inline-кнопки: sendData =====
       try {
         WebApp.sendData(JSON.stringify(payload));
         WebApp.showPopup({ title: "Заказ отправлен", message: "Счёт в чате.", buttons:[{id:"ok",type:"default",text:"Ок"}] }, () => {
@@ -218,14 +202,6 @@
         WebApp.showAlert("Ошибка: " + e);
       }
     }
-
-    if (window.Telegram?.WebApp) {
-      Telegram.WebApp.MainButton.onClick(() => {
-        if (view !== 'cart') goCart();
-        if (cart.size) checkout();
-      });
-    }
-  </script>
 
     if (inTG) {
       WebApp.MainButton.onClick(() => {
