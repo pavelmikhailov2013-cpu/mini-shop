@@ -174,12 +174,58 @@
       return { order_id: String(Date.now()), items, total, currency: "RUB" };
     }
 
-    function checkout() {
-      if (!inTG) { alert("Откройте магазин в Telegram у бота — счёт придёт в чат."); return; }
-      const payload = buildPayload();
-      WebApp.sendData(JSON.stringify(payload)); // бот получит web_app_data
-      WebApp.close();
+  <script>
+    function buildPayload() {
+      const items = [...cart.values()].map(({item, qty}) => ({
+        id: item.id, title: item.title, qty, price: item.price, sum: item.price * qty
+      }));
+      const total = items.reduce((s, x) => s + x.sum, 0);
+      return { order_id: String(Date.now()), items, total, currency: "RUB" };
     }
+
+    async function checkout() {
+      const WebApp = window.Telegram?.WebApp;
+      if (!WebApp) { alert("Откройте магазин в Telegram у бота."); return; }
+
+      const payload = buildPayload();
+      const qid = WebApp?.initDataUnsafe?.query_id; // есть только при запуске из Menu Button/inline
+
+      if (qid) {
+        // ======== ПУТЬ ДЛЯ MENU BUTTON: answerWebAppQuery ========
+        try {
+          const res = await fetch("https://mini-shop-pavel.loca.lt/webapp/checkout", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ query_id: qid, payload })
+          });
+          if (!res.ok) throw new Error("HTTP " + res.status);
+          WebApp.showPopup({ title: "Заказ отправлен", message: "Счёт появился в чате.", buttons:[{id:"ok",type:"default",text:"Ок"}] }, () => {
+            setTimeout(() => WebApp.close(), 300);
+          });
+        } catch (e) {
+          WebApp.showAlert("Не удалось оформить через Menu Button: " + e);
+        }
+        return;
+      }
+
+      // ======== ПУТЬ ДЛЯ СЕРОЙ/INLINE-КНОПКИ: sendData ========
+      try {
+        WebApp.sendData(JSON.stringify(payload));
+        WebApp.showPopup({ title: "Заказ отправлен", message: "Счёт в чате.", buttons:[{id:"ok",type:"default",text:"Ок"}] }, () => {
+          setTimeout(() => WebApp.close(), 300);
+        });
+      } catch (e) {
+        WebApp.showAlert("Ошибка: " + e);
+      }
+    }
+
+    if (window.Telegram?.WebApp) {
+      Telegram.WebApp.MainButton.onClick(() => {
+        if (view !== 'cart') goCart();
+        if (cart.size) checkout();
+      });
+    }
+  </script>
 
     if (inTG) {
       WebApp.MainButton.onClick(() => {
