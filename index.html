@@ -3,101 +3,194 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>Mini Shop</title>
+  <title>Магазин</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:16px }
-    h2 { margin:0 0 8px }
+    :root { --pad: 16px }
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: var(--pad) }
+    h2 { margin: 0 0 8px }
     .hint { opacity:.7; margin-bottom:12px }
+    .tabs { display:flex; gap:8px; margin-bottom:12px }
+    .tab { padding:8px 12px; border-radius:12px; background:#f2f3f5; cursor:pointer; user-select:none }
+    .tab.active { background:#e0e3e7; font-weight:600 }
     .grid { display:grid; gap:10px }
     .card { border-radius:16px; padding:12px; box-shadow:0 1px 6px rgba(0,0,0,.08) }
     .row { display:flex; justify-content:space-between; align-items:center; gap:8px }
     button { padding:10px 14px; border:none; border-radius:12px; cursor:pointer; background:#f2f3f5 }
+    .ghost { background:#eceff3 }
     .total { font-weight:700; margin-top:6px }
     .notice { background:#fff8d1; border:1px solid #f0e2a0; border-radius:12px; padding:10px; margin-top:10px }
+    .cart { display:grid; gap:8px }
+    .price { opacity:.8 }
+    .footer { position:sticky; bottom:0; background:#fff; padding-top:12px }
   </style>
 </head>
 <body>
-  <h2>Каталог</h2>
-  <div class="hint">Добавляйте товары и оформляйте заказ — счёт придёт в чат с ботом.</div>
-  <div id="list" class="grid"></div>
+  <h2>Мини-магазин</h2>
+  <div class="hint">Выберите товары → перейдите в корзину → «Оформить заказ». Бот пришлёт счёт.</div>
+
+  <div class="tabs">
+    <div id="tabCatalog" class="tab active" onclick="goCatalog()">Каталог</div>
+    <div id="tabCart" class="tab" onclick="goCart()">Корзина (<span id="cartQty">0</span>)</div>
+  </div>
+
+  <div id="catalog" class="grid"></div>
+
+  <div id="cart" class="cart" style="display:none"></div>
+
   <div id="fallback" class="notice" style="display:none">
-    Откройте этот магазин из Telegram, чтобы оформить заказ (Mini App).<br/>
-    Найдите бота <b>@YOUR_BOT_USERNAME</b> и нажмите «Открыть магазин».
+    Откройте этот магазин из Telegram (кнопка у бота) — тогда заказ уйдёт в бот и он пришлёт счёт.<br/>
+    Бот: <b>@YOUR_BOT_USERNAME</b>
+  </div>
+
+  <div class="footer">
+    <div id="summary" class="total"></div>
   </div>
 
   <script>
     const WebApp = window.Telegram?.WebApp;
     const inTG = !!WebApp; if (inTG) { WebApp.expand(); WebApp.ready(); }
 
-    // 5 простых товаров (цены — для счёта, без реальной оплаты)
+    // ---- Каталог: 5 товаров 100–500 ₽
     const catalog = [
-      { id: 1, title: "Товар A", price: 490 },
-      { id: 2, title: "Товар B", price: 790 },
-      { id: 3, title: "Товар C", price: 1290 },
-      { id: 4, title: "Товар D", price: 990 },
-      { id: 5, title: "Товар E", price: 350 },
+      { id: 1, title: "Товар A", price: 100 },
+      { id: 2, title: "Товар B", price: 200 },
+      { id: 3, title: "Товар C", price: 300 },
+      { id: 4, title: "Товар D", price: 400 },
+      { id: 5, title: "Товар E", price: 500 },
     ];
 
     const cart = new Map();
-    const list = document.getElementById('list');
+    let view = 'catalog'; // 'catalog' | 'cart'
+    const fmt = n => new Intl.NumberFormat('ru-RU').format(n) + " ₽";
 
-    const format = n => new Intl.NumberFormat('ru-RU').format(n) + " ₽";
+    const el = {
+      catalog: document.getElementById('catalog'),
+      cart: document.getElementById('cart'),
+      cartQty: document.getElementById('cartQty'),
+      summary: document.getElementById('summary'),
+      tabCatalog: document.getElementById('tabCatalog'),
+      tabCart: document.getElementById('tabCart'),
+      fallback: document.getElementById('fallback'),
+    };
 
-    function render() {
-      list.innerHTML = "";
+    function renderCatalog() {
+      el.catalog.innerHTML = "";
       catalog.forEach(p => {
-        const el = document.createElement('div');
-        el.className = 'card';
-        el.innerHTML = `
+        const e = document.createElement('div');
+        e.className = 'card';
+        e.innerHTML = `
           <div class="row">
-            <div><b>${p.title}</b><div class="hint">${format(p.price)}</div></div>
+            <div><b>${p.title}</b><div class="price">${fmt(p.price)}</div></div>
             <div class="row">
-              <button onclick="add(${p.id})">＋</button>
+              <button onclick="dec(${p.id})">–</button>
               <div id="qty-${p.id}" style="min-width:24px;text-align:center">${cart.get(p.id)?.qty||0}</div>
-              <button onclick="remove(${p.id})">–</button>
+              <button onclick="inc(${p.id})">＋</button>
             </div>
           </div>`;
-        list.appendChild(el);
+        el.catalog.appendChild(e);
+      });
+    }
+
+    function renderCart() {
+      el.cart.innerHTML = "";
+      if (cart.size === 0) {
+        el.cart.innerHTML = '<div class="notice">Корзина пуста. Добавьте товары в каталоге.</div>';
+        return;
+      }
+      [...cart.values()].forEach(({item, qty}) => {
+        const e = document.createElement('div');
+        e.className = 'card';
+        e.innerHTML = `
+          <div class="row">
+            <div><b>${item.title}</b><div class="price">${fmt(item.price)}</div></div>
+            <div class="row">
+              <button onclick="dec(${item.id})">–</button>
+              <div style="min-width:24px;text-align:center">${qty}</div>
+              <button onclick="inc(${item.id})">＋</button>
+            </div>
+          </div>`;
+        el.cart.appendChild(e);
       });
 
-      const total = [...cart.values()].reduce((s, x) => s + x.item.price * x.qty, 0);
+      const btn = document.createElement('button');
+      btn.className = 'ghost';
+      btn.style.marginTop = '8px';
+      btn.textContent = 'Оформить заказ';
+      btn.onclick = checkout;
+      el.cart.appendChild(btn);
+    }
+
+    function updateSummary() {
+      const qty = [...cart.values()].reduce((s, x) => s + x.qty, 0);
+      const total = [...cart.values()].reduce((s, x) => s + x.qty * x.item.price, 0);
+      el.cartQty.textContent = qty;
+      el.summary.textContent = qty ? `В корзине: ${qty} • Итого: ${fmt(total)}` : '';
+      if (!inTG) el.fallback.style.display = 'block';
       if (inTG) {
-        WebApp.MainButton.setText(total ? `Оформить: ${format(total)}` : "Корзина пуста");
-        WebApp.MainButton[total ? 'show' : 'hide']();
-      } else {
-        document.getElementById('fallback').style.display = 'block';
+        WebApp.MainButton.setText(qty ? `Оформить: ${fmt(total)}` : "Корзина пуста");
+        WebApp.MainButton[qty ? 'show' : 'hide']();
       }
     }
 
-    window.add = (id) => {
+    function inc(id) {
       const item = catalog.find(x => x.id === id);
       const cur = cart.get(id) || { item, qty: 0 };
       cur.qty++; cart.set(id, cur);
       if (inTG) WebApp.HapticFeedback.impactOccurred('light');
-      document.getElementById(`qty-${id}`).textContent = cur.qty;
-      render();
-    };
-    window.remove = (id) => {
+      const q = document.getElementById(`qty-${id}`); if (q) q.textContent = cur.qty;
+      updateSummary();
+      if (view === 'cart') renderCart();
+    }
+    function dec(id) {
       const cur = cart.get(id); if (!cur) return;
       cur.qty--; if (cur.qty <= 0) cart.delete(id); else cart.set(id, cur);
-      document.getElementById(`qty-${id}`).textContent = cur?.qty || 0;
-      render();
-    };
+      const q = document.getElementById(`qty-${id}`); if (q) q.textContent = cur?.qty || 0;
+      updateSummary();
+      if (view === 'cart') renderCart();
+    }
+
+    function goCatalog() {
+      view = 'catalog';
+      el.tabCatalog.classList.add('active');
+      el.tabCart.classList.remove('active');
+      el.catalog.style.display = '';
+      el.cart.style.display = 'none';
+    }
+    function goCart() {
+      view = 'cart';
+      el.tabCart.classList.add('active');
+      el.tabCatalog.classList.remove('active');
+      el.catalog.style.display = 'none';
+      el.cart.style.display = '';
+      renderCart();
+    }
+
+    function buildPayload() {
+      const items = [...cart.values()].map(({item, qty}) => ({
+        id: item.id, title: item.title, qty, price: item.price, sum: item.price * qty
+      }));
+      const total = items.reduce((s, x) => s + x.sum, 0);
+      return { order_id: String(Date.now()), items, total, currency: "RUB" };
+    }
+
+    function checkout() {
+      if (!inTG) { alert("Откройте магазин в Telegram у бота — счёт придёт в чат."); return; }
+      const payload = buildPayload();
+      WebApp.sendData(JSON.stringify(payload)); // бот получит web_app_data
+      WebApp.close();
+    }
 
     if (inTG) {
       WebApp.MainButton.onClick(() => {
-        const items = [...cart.values()].map(({item, qty}) =>
-          ({ id: item.id, title: item.title, qty, price: item.price, sum: item.price * qty })
-        );
-        const total = items.reduce((s, x) => s + x.sum, 0);
-        const payload = { order_id: String(Date.now()), items, total, currency: "RUB" };
-        WebApp.sendData(JSON.stringify(payload));  // бот получит web_app_data
-        WebApp.close();
+        if (view !== 'cart') goCart();
+        if (cart.size) checkout();
       });
     }
 
-    render();
+    // init
+    renderCatalog();
+    updateSummary();
   </script>
 </body>
 </html>
