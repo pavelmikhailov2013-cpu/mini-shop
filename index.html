@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Mini Shop</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin:16px }
+    h2 { margin:0 0 8px }
+    .hint { opacity:.7; margin-bottom:12px }
+    .grid { display:grid; gap:10px }
+    .card { border-radius:16px; padding:12px; box-shadow:0 1px 6px rgba(0,0,0,.08) }
+    .row { display:flex; justify-content:space-between; align-items:center; gap:8px }
+    button { padding:10px 14px; border:none; border-radius:12px; cursor:pointer; background:#f2f3f5 }
+    .total { font-weight:700; margin-top:6px }
+    .notice { background:#fff8d1; border:1px solid #f0e2a0; border-radius:12px; padding:10px; margin-top:10px }
+  </style>
+</head>
+<body>
+  <h2>Каталог</h2>
+  <div class="hint">Добавляйте товары и оформляйте заказ — счёт придёт в чат с ботом.</div>
+  <div id="list" class="grid"></div>
+  <div id="fallback" class="notice" style="display:none">
+    Откройте этот магазин из Telegram, чтобы оформить заказ (Mini App).<br/>
+    Найдите бота <b>@YOUR_BOT_USERNAME</b> и нажмите «Открыть магазин».
+  </div>
+
+  <script>
+    const WebApp = window.Telegram?.WebApp;
+    const inTG = !!WebApp; if (inTG) { WebApp.expand(); WebApp.ready(); }
+
+    // 5 простых товаров (цены — для счёта, без реальной оплаты)
+    const catalog = [
+      { id: 1, title: "Товар A", price: 490 },
+      { id: 2, title: "Товар B", price: 790 },
+      { id: 3, title: "Товар C", price: 1290 },
+      { id: 4, title: "Товар D", price: 990 },
+      { id: 5, title: "Товар E", price: 350 },
+    ];
+
+    const cart = new Map();
+    const list = document.getElementById('list');
+
+    const format = n => new Intl.NumberFormat('ru-RU').format(n) + " ₽";
+
+    function render() {
+      list.innerHTML = "";
+      catalog.forEach(p => {
+        const el = document.createElement('div');
+        el.className = 'card';
+        el.innerHTML = `
+          <div class="row">
+            <div><b>${p.title}</b><div class="hint">${format(p.price)}</div></div>
+            <div class="row">
+              <button onclick="add(${p.id})">＋</button>
+              <div id="qty-${p.id}" style="min-width:24px;text-align:center">${cart.get(p.id)?.qty||0}</div>
+              <button onclick="remove(${p.id})">–</button>
+            </div>
+          </div>`;
+        list.appendChild(el);
+      });
+
+      const total = [...cart.values()].reduce((s, x) => s + x.item.price * x.qty, 0);
+      if (inTG) {
+        WebApp.MainButton.setText(total ? `Оформить: ${format(total)}` : "Корзина пуста");
+        WebApp.MainButton[total ? 'show' : 'hide']();
+      } else {
+        document.getElementById('fallback').style.display = 'block';
+      }
+    }
+
+    window.add = (id) => {
+      const item = catalog.find(x => x.id === id);
+      const cur = cart.get(id) || { item, qty: 0 };
+      cur.qty++; cart.set(id, cur);
+      if (inTG) WebApp.HapticFeedback.impactOccurred('light');
+      document.getElementById(`qty-${id}`).textContent = cur.qty;
+      render();
+    };
+    window.remove = (id) => {
+      const cur = cart.get(id); if (!cur) return;
+      cur.qty--; if (cur.qty <= 0) cart.delete(id); else cart.set(id, cur);
+      document.getElementById(`qty-${id}`).textContent = cur?.qty || 0;
+      render();
+    };
+
+    if (inTG) {
+      WebApp.MainButton.onClick(() => {
+        const items = [...cart.values()].map(({item, qty}) =>
+          ({ id: item.id, title: item.title, qty, price: item.price, sum: item.price * qty })
+        );
+        const total = items.reduce((s, x) => s + x.sum, 0);
+        const payload = { order_id: String(Date.now()), items, total, currency: "RUB" };
+        WebApp.sendData(JSON.stringify(payload));  // бот получит web_app_data
+        WebApp.close();
+      });
+    }
+
+    render();
+  </script>
+</body>
+</html>
