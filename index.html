@@ -5,13 +5,16 @@
   <meta name="viewport" content="width=device-width,initial-scale=1" />
   <title>Мини-магазин</title>
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate"/>
+  <meta http-equiv="Pragma" content="no-cache"/>
+  <meta http-equiv="Expires" content="0"/>
   <style>
     :root { --pad: 16px }
     body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; margin: var(--pad) }
     h2 { margin: 0 0 8px }
     .hint { opacity:.7; margin-bottom:12px }
     .tabs { display:flex; gap:8px; margin-bottom:12px }
-    .tab { padding:8px 12px; border-radius:12px; background:#f2f3f5; cursor:pointer; user-select:none }
+    .tab { padding:8px 12px; border-radius:12px; background:#f2f3f5; cursor:pointer }
     .tab.active { background:#e0e3e7; font-weight:600 }
     .grid { display:grid; gap:10px }
     .card { border-radius:16px; padding:12px; box-shadow:0 1px 6px rgba(0,0,0,.08) }
@@ -27,7 +30,7 @@
 </head>
 <body>
   <h2>Мини-магазин</h2>
-  <div class="hint">Выберите товары → перейдите в корзину → «Оформить заказ». Бот пришлёт счёт.</div>
+  <div class="hint">Выберите товары → «Корзина» → «Оформить заказ». Бот пришлёт счёт.</div>
 
   <div class="tabs">
     <div id="tabCatalog" class="tab active" onclick="goCatalog()">Каталог</div>
@@ -38,7 +41,7 @@
   <div id="cart" class="cart" style="display:none"></div>
 
   <div id="fallback" class="notice" style="display:none">
-    Откройте этот магазин из Telegram (кнопка у бота) — тогда заказ уйдёт в бот и он пришлёт счёт.<br/>
+    Откройте этот магазин из Telegram (команда <b>/start</b> у бота), чтобы оформить заказ.<br/>
     Бот: <b>@magazin_b2b_bot</b>
   </div>
 
@@ -48,7 +51,6 @@
     const WebApp = window.Telegram?.WebApp;
     const inTG = !!WebApp; if (inTG) { WebApp.expand(); WebApp.ready(); }
 
-    // --- Каталог: 5 товаров 100–500 ₽
     const catalog = [
       { id: 1, title: "Товар A", price: 100 },
       { id: 2, title: "Товар B", price: 200 },
@@ -56,7 +58,6 @@
       { id: 4, title: "Товар D", price: 400 },
       { id: 5, title: "Товар E", price: 500 },
     ];
-
     const cart = new Map();
     let view = 'catalog';
     const fmt = n => new Intl.NumberFormat('ru-RU').format(n) + " ₽";
@@ -169,42 +170,17 @@
       return { order_id: String(Date.now()), items, total, currency: "RUB" };
     }
 
-    async function checkout() {
+    function checkout() {
+      if (!inTG) { alert("Откройте магазин у бота (команда /start)."); return; }
       const payload = buildPayload();
-      if (!inTG) { alert("Откройте магазин в Telegram у бота."); return; }
-
-      const qid = WebApp?.initDataUnsafe?.query_id; // есть при запуске из Menu Button
-      if (qid) {
-        // ===== путь для Menu Button: answerWebAppQuery через ваш HTTP-эндпоинт =====
-        try {
-          const res = await fetch("https://mini-shop-pavel.loca.lt/webapp/checkout", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ query_id: qid, payload })
-          });
-          if (!res.ok) throw new Error("HTTP " + res.status);
-          WebApp.showPopup({ title: "Заказ отправлен", message: "Счёт появился в чате.", buttons:[{id:"ok",type:"default",text:"Ок"}] }, () => {
-            setTimeout(() => WebApp.close(), 300);
-          });
-        } catch (e) {
-          WebApp.showAlert("Не удалось оформить через Menu Button: " + e);
-        }
-        return;
-      }
-
-      // ===== путь для серой/inline-кнопки: sendData =====
-      try {
-        WebApp.sendData(JSON.stringify(payload));
-        WebApp.showPopup({ title: "Заказ отправлен", message: "Счёт в чате.", buttons:[{id:"ok",type:"default",text:"Ок"}] }, () => {
-          setTimeout(() => WebApp.close(), 300);
-        });
-      } catch (e) {
-        WebApp.showAlert("Ошибка: " + e);
-      }
+      Telegram.WebApp.sendData(JSON.stringify(payload));
+      Telegram.WebApp.showPopup({ title: "Заказ отправлен", message: "Счёт в чате.", buttons:[{id:"ok",type:"default",text:"Ок"}] }, () => {
+        setTimeout(() => Telegram.WebApp.close(), 300);
+      });
     }
 
     if (inTG) {
-      WebApp.MainButton.onClick(() => {
+      Telegram.WebApp.MainButton.onClick(() => {
         if (view !== 'cart') goCart();
         if (cart.size) checkout();
       });
